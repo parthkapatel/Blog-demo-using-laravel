@@ -24,7 +24,6 @@
 </div>
 
 <div class="jumbotron rounded-0 clearfix w-100 m-0 about" id="about" >
-    <h1 class="h1 text-center">About Us</h1>
     <div class="col-lg-4 col-md-12 float-lg-left">
         <img src="img/thumbnail-image.jpg" class="img-fluid rounded" alt="image">
     </div>

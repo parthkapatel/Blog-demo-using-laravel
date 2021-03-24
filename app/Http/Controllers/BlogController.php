@@ -6,6 +6,7 @@ use App\Models\Blog;
 use App\Models\BlogVote;
 use App\Models\Comment;
 use App\Models\User;
+use App\Interfaces\BlogRepositoryInterface;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Contracts\View\View;
@@ -18,9 +19,11 @@ use Illuminate\Support\Facades\Redirect;
 class BlogController extends Controller
 {
 
-    public function __construct()
+    private $blogRepository;
+    public function __construct(BlogRepositoryInterface $blogRepository)
     {
         $this->middleware('auth');
+        $this->blogRepository = $blogRepository;
     }
 
     /**
@@ -30,8 +33,11 @@ class BlogController extends Controller
      */
     public function index()
     {
-        $blogs = User::join('blogs', 'blogs.user_id', '=', 'users.id')->where("status", "!=", "draft")->orderBy("blogs.created_at", "desc")->paginate(5);
-        return view("blog.blogs", compact("blogs"));
+        $blogs = $this->blogRepository->all();
+      //  $blogs = User::join('blogs', 'blogs.user_id', '=', 'users.id')->where("status", "!=", "draft")->orderBy("blogs.created_at", "desc")->paginate(5);
+        return view("blog.blogs",[
+            'blogs' => $blogs
+        ]);
     }
 
     /**

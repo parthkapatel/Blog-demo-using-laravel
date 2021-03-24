@@ -31,7 +31,7 @@
                     </div>
 
                 @endforeach
-                <div class="container">{{  $blogs->links() }}</div>
+
 
                 @else
                     <div class="container blog-post">

@@ -2,14 +2,11 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Blog;
-use App\Models\BlogVote;
-use App\Models\Comment;
-use App\Models\User;
 use App\Interfaces\BlogRepositoryInterface;
 use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Contracts\View\Factory;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
@@ -20,6 +17,7 @@ class BlogController extends Controller
 {
 
     private $blogRepository;
+
     public function __construct(BlogRepositoryInterface $blogRepository)
     {
         $this->middleware('auth');
@@ -33,9 +31,8 @@ class BlogController extends Controller
      */
     public function index()
     {
-        $blogs = $this->blogRepository->all();
-      //  $blogs = User::join('blogs', 'blogs.user_id', '=', 'users.id')->where("status", "!=", "draft")->orderBy("blogs.created_at", "desc")->paginate(5);
-        return view("blog.blogs",[
+        $blogs = $this->blogRepository->getPaginate();
+        return view("blog.blogs", [
             'blogs' => $blogs
         ]);
     }
@@ -43,7 +40,7 @@ class BlogController extends Controller
     /**
      * Show the form for creating a new resource.
      *
-     * @return Response
+     * @return Application|Factory|View|Response
      */
     public function create()
     {
@@ -58,32 +55,23 @@ class BlogController extends Controller
      * @param Request $request
      * @return RedirectResponse
      */
-    public function store(Request $request)
+    public function store(Request $request): RedirectResponse
     {
         $request->validate([
             "title" => 'required|string',
             "description" => 'required|string',
             "status" => 'required|string'
         ]);
-        $blog = new Blog();
 
-        if ($request->image != null) {
-            $imageName = time() . '.' . $request->image->extension();
-            if ($request->image->move(public_path('img'), $imageName)) {
-                $blog->title = $request->title;
-                $blog->user_id = Auth::user()->id;
-                $blog->image_path = $imageName;
-                $blog->description = $request->description;
-                $blog->status = $request->status;
-                $blog->save();
-                return Redirect::back()->with("msg", "Blog Upload Successfully");
-            }
-        } else if ($request->image == null) {
-            $blog->title = $request->title;
-            $blog->user_id = Auth::user()->id;
-            $blog->description = $request->description;
-            $blog->status = $request->status;
-            $blog->save();
+        $user_id = Auth::user()->id;
+        $data = [
+            "title" => $request->title,
+            "image" => $request->image,
+            "description" => $request->description,
+            "status" => $request->status
+        ];
+        $data = $this->blogRepository->save($data, $user_id);
+        if ($data) {
             return Redirect::to("view-your-blogs")->with("msg", "Blog Upload Successfully");
         } else {
             return Redirect::to("view-your-blogs")->with("msg", "Something is wrong to upload blog");
@@ -94,49 +82,34 @@ class BlogController extends Controller
     /**
      * Display the specified resource.
      *
-     * @param Blog $blog
      * @param Request $request
      * @return Application|Factory|View|Response
      */
-    public function show(Blog $blog, Request $request)
+    public function show(Request $request)
     {
-        $id = $request->route('blog_id');
-        $blog = Blog::find($id);
+        $blog_id = $request->route('blog_id');
 
-        $blog->total_views += 1;
-        $blog->save();
-        /* id and title for  next and previous button */
-
-        $previousId = Blog::where('blogs.id', '<', $blog->id)->where("status", "!=", "draft")->max('blogs.id');
-        $nextId = Blog::where('blogs.id', '>', $blog->id)->where("status", "!=", "draft")->min('blogs.id');
-
-        $previous = Blog::where('blogs.id', '=', $previousId)->first();
-        $next = Blog::where('blogs.id', '=', $nextId)->first();
-
-        /* ------------------- */
-        /* Blog Data */
-
-        $blog = User::join('blogs', 'blogs.user_id', '=', 'users.id')->where("blogs.id", "=", $id)->where("status", "!=", "draft")->first();
-
-        /* Comment Data on Blog */
-
-        $comments = Comment::join('users', 'users.id','=', 'comments.user_id')->where("comments.blog_id",$id)->select("users.name","comments.id","comments.blog_id","comments.user_id","comments.comment_message","comments.created_at")->orderBy("comments.created_at","asc")->paginate();
-        //$comments = Comment::join('users', 'comments.user_id', '=', 'users.id')->where("comments.blog_id",$id)->orderBy("comments.created_at","asc")->simplePaginate(5);
-        return  view("blog.singleBlog", compact("blog", "previous", "next","comments"));
+        $this->blogRepository->updateTotalViews($blog_id);
+        $data = $this->blogRepository->getDataByIdAndStatus($blog_id);
+        $blog = $data['blog'];
+        $comments = $data['comment'];
+        $previous = $data['previous'];
+        $next = $data['next'];
+        return view("blog.singleBlog", compact("blog", "previous", "next", "comments"));
     }
 
     /**
      * Show the form for editing the specified resource.
      *
-     * @param Blog $blog
+     *
      * @param Request $request
-     * @return Response
+     * @return Application|Factory|View|Response
      */
-    public function edit(Blog $blog, Request $request)
+    public function edit(Request $request)
     {
         $id = $request->route("blog_id");
-        $blogData = Blog::where("id", $id)->get();
-        $blog = $blogData[0];
+        $data = $this->blogRepository->getDataById($id);
+        $blog = $data;
         $heading = "Update Blog";
         $action = "/blog/$id/update";
         return view("blog.upload", compact("blog", "heading", "action"));
@@ -146,29 +119,20 @@ class BlogController extends Controller
      * Update the specified resource in storage.
      *
      * @param Request $request
-     * @param Blog $blog
-     * @return Response
+     * @return RedirectResponse
      */
-    public function update(Request $request, Blog $blog)
+    public function update(Request $request): RedirectResponse
     {
-        $blog = $blog::find($request->route("blog_id"));
-        if ($request->image != null) {
-            $imageName = time() . '.' . $request->image->extension();
-            if ($request->image->move(public_path('img'), $imageName)) {
-                $blog->title = $request->title;
-                $blog->user_id = Auth::user()->id;
-                $blog->image_path = $imageName;
-                $blog->description = $request->description;
-                $blog->status = $request->status;
-                $blog->save();
-                return Redirect::to("view-your-blogs")->with("msg", "Blog Update Successfully");
-            }
-        } else if ($request->image == null) {
-            $blog->title = $request->title;
-            $blog->user_id = Auth::user()->id;
-            $blog->description = $request->description;
-            $blog->status = $request->status;
-            $blog->save();
+        $blog_id = $request->route("blog_id");
+        $user_id = Auth::id();
+        $array = [
+            "title" => $request->title,
+            "image" => $request->image,
+            "description" => $request->description,
+            "status" => $request->status
+        ];
+        $data = $this->blogRepository->update($array, $blog_id, $user_id);
+        if ($data) {
             return Redirect::to("view-your-blogs")->with("msg", "Blog Update Successfully");
         } else {
             return Redirect::to("view-your-blogs")->with("msg", "Something is wrong to upload blog");
@@ -178,45 +142,31 @@ class BlogController extends Controller
     /**
      * Remove the specified resource from storage.
      *
-     * @param Blog $blog
      * @param Request $request
+     * @return RedirectResponse
      */
-    public function destroy(Blog $blog, Request $request)
+    public function destroy(Request $request): RedirectResponse
     {
-        $id = $request->route("blog_id");
-        Blog::where('id', $id)->delete();
-        $blogs = Blog::where('blogs.user_id', '=', Auth::user()->id)->get();
-        return Redirect::to("view-your-blogs")->with("msg","Blog Deleted Successfully");
+        $blog_id = $request->route("blog_id");
+        $data = $this->blogRepository->delete($blog_id);
+        if ($data)
+            return Redirect::to("view-your-blogs")->with("msg", "Blog deleted successfully");
+        else
+            return Redirect::to("view-your-blogs")->with("msg", "Something is wrong to delete data");
     }
 
     public function userBlogs()
     {
-        //$blogs = Blog::where('blogs.user_id', '=', Auth::user()->id)->get();
-        $blogs = Blog::where('blogs.user_id', '=', Auth::user()->id)->get();
+        $blogs = $this->blogRepository->getAllDataByUserId(Auth::user()->id);
         return view("blog.view_user_blogs", compact("blogs"));
     }
 
-    public function getCountValues(Request $request){
-        $id = $request->route("blog_id");
-        $uid = Auth::user()->id;
-        /* Like Dislike Count */
-        $likes = BlogVote::where('blog_votes.blog_id', $id)->sum('blog_votes.likes');
-        $dislikes = BlogVote::where('blog_votes.blog_id', $id)->sum('blog_votes.dislikes');
-        /* comment counter */
-        $commentCounter = Comment::where('comments.blog_id', $id)->count('id');
-
-        /* check user has clicked any button or not */
-        $userLikes = BlogVote::where('blog_votes.blog_id', $id)->where('blog_votes.user_id', $uid)->sum('blog_votes.likes');
-        $useDislikes = BlogVote::where('blog_votes.blog_id', $id)->where('blog_votes.user_id', $uid)->sum('blog_votes.dislikes');
-
-        $arr = [
-            "total_likes" => $likes,
-            "total_dislikes" => $dislikes,
-            "total_comment" => $commentCounter,
-            "user_likes" => $userLikes,
-            "user_dislikes" => $useDislikes
-        ];
-        return response()->json($arr);;
+    public function getCountValues(Request $request): JsonResponse
+    {
+        $blog_id = $request->route("blog_id");
+        $user_id = Auth::user()->id;
+        $data = $this->blogRepository->getPostsAllCounterValues($blog_id, $user_id);
+        return response()->json($data);;
     }
 
 }

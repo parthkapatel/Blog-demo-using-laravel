@@ -32,12 +32,14 @@
 
                 @endforeach
 
-
-                @else
+            @else
                     <div class="container blog-post">
                         <span class="text-info display-2">No Data Found</span>
                     </div>
                 @endif
             </div>
+        <div class="container text-right">
+            {{ $blogs->links('vendor.pagination.custom') }}
+        </div>
     </div>
 @endsection
